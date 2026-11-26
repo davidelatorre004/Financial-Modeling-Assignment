@@ -5,7 +5,7 @@ portfolio and a levered risk parity portfolio, depending on the stock–bond cor
 every parameter in the sidebar and see the effect on performance, drawdowns, regime switches,
 implementation costs and threshold sensitivity.
 
-**Live app:** https://YOUR-APP-NAME.streamlit.app *(placeholder)*  
+**Live app:** https://financial-modeling-assignment-wcbrtezmes4ay4sgygpdew.streamlit.app/  
 **Repository:** https://github.com/davidelatorre004/Financial-Modeling-Assignment
 
 ## The strategy in 5 lines
