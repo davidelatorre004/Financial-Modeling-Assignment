@@ -70,7 +70,9 @@ with st.sidebar:
               help='Switch to risk parity when the rolling SPY-IEI correlation is at or below this value.')
     st.slider('Correlation window (days)', 60, 250, step=1, key='corr_window')
     st.slider('Volatility window (days)', 10, 60, step=1, key='vol_window')
-    st.slider('Target volatility per asset (%)', 3.0, 12.0, step=0.5, key='target_vol_pct')
+    st.slider('Target volatility per asset (%)', 3.0, 100.0, step=0.5, key='target_vol_pct',
+              help='Ex-ante volatility cap for each asset in risk parity. High values push the weights '
+                   'up until the maximum gross leverage binds.')
     st.slider('Maximum gross leverage (x)', 1.0, 7.0, step=0.1, key='max_lev')
     st.slider('Transaction cost (bp per unit traded)', 0.0, 30.0, step=0.5, key='tc_bp')
     st.slider('Funding spread over T-bill (%)', 0.0, 2.0, step=0.1, key='spread_pct')
