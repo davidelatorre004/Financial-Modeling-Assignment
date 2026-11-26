@@ -66,15 +66,15 @@ for key, value in WIDGET_DEFAULTS.items():                 # initialise the widg
 
 with st.sidebar:
     st.header('Strategy parameters')
-    st.slider('Correlation threshold', -0.6, 0.0, step=0.05, key='threshold',
+    st.slider('Correlation threshold', -0.6, 0.6, step=0.05, key='threshold',
               help='Switch to risk parity when the rolling SPY-IEI correlation is at or below this value.')
     st.slider('Correlation window (days)', 60, 250, step=1, key='corr_window')
     st.slider('Volatility window (days)', 10, 60, step=1, key='vol_window')
     st.slider('Target volatility per asset (%)', 3.0, 12.0, step=0.5, key='target_vol_pct')
-    st.slider('Maximum gross leverage (x)', 1.0, 3.0, step=0.1, key='max_lev')
+    st.slider('Maximum gross leverage (x)', 1.0, 7.0, step=0.1, key='max_lev')
     st.slider('Transaction cost (bp per unit traded)', 0.0, 30.0, step=0.5, key='tc_bp')
     st.slider('Funding spread over T-bill (%)', 0.0, 2.0, step=0.1, key='spread_pct')
-    st.slider('Static portfolio: equity share (%)', 20.0, 60.0, step=5.0, key='equity_pct',
+    st.slider('Static portfolio: equity share (%)', 0.0, 100.0, step=5.0, key='equity_pct',
               help='SPY weight of the static benchmark; bonds (IEI) get the rest.')
     st.caption(f"Static weights: {st.session_state['equity_pct']:.0f}% SPY / "
                f"{100 - st.session_state['equity_pct']:.0f}% IEI")
@@ -96,6 +96,11 @@ params = dict(
     w_iei_static=1 - w_spy_static,
 )
 
+# Name of the static benchmark, bonds/equity as in the notebook ("60/40" = 60% IEI, 40% SPY).
+# It follows the equity share chosen in the sidebar, e.g. 30% equity -> "70/30".
+EQ_PCT = st.session_state['equity_pct']
+BENCH = f"{100 - EQ_PCT:.0f}/{EQ_PCT:.0f}"
+
 
 # ---------------------------------------------------------------------------------------------
 # Data (cached for one day) and backtest
@@ -108,7 +113,8 @@ def load_data(start, end):
 
 st.title('Correlation-Switch Risk Parity: SPY & IEI')
 st.markdown(
-    "By default the portfolio is a **static 60/40** (60% IEI Treasuries 3–7y, 40% SPY S&P 500), rebalanced daily.  \n"
+    f"By default the portfolio is a **static {BENCH}** ({100 - EQ_PCT:.0f}% IEI Treasuries 3–7y, "
+    f"{EQ_PCT:.0f}% SPY S&P 500), rebalanced daily.  \n"
     "When the rolling stock–bond correlation falls to the **threshold or below**, bonds are a reliable hedge and it "
     "switches to **risk parity**: each asset is sized to a target volatility, with leverage up to a cap.  \n"
     "Leverage is funded at the 1-month T-bill plus a spread, and every trade pays a transaction cost."
@@ -175,8 +181,8 @@ def show(fig):
 
 
 # ---------------------------------------------------------------------------------------------
-# 2. KPI row (always visible, above the tabs): strategy (net) vs static 60/40.
-#    The small coloured number is the difference from the 60/40: green = better, red = worse.
+# 2. KPI row (always visible, above the tabs): strategy (net) vs the static benchmark.
+#    The small coloured number is the difference from the benchmark: green = better, red = worse.
 # ---------------------------------------------------------------------------------------------
 d_final = res['final_net'] - res['final_6040']
 d_sharpe = res['sharpe_net'] - res['sharpe_6040']
@@ -185,14 +191,14 @@ d_mdd = 100 * (res['mdd_net'] - res['mdd_6040'])           # in percentage point
 k1, k2, k3, k4 = st.columns(4)
 k1.metric('Final value of $1 (net)', f"${res['final_net']:.2f}",
           f"{'+' if d_final >= 0 else '-'}${abs(d_final):.2f}",
-          delta_description=f"vs 60/40 (${res['final_6040']:.2f})", border=True)
+          delta_description=f"vs {BENCH} (${res['final_6040']:.2f})", border=True)
 k2.metric('Sharpe ratio (net)', f"{res['sharpe_net']:.2f}", f"{d_sharpe:+.2f}",
-          delta_description=f"vs 60/40 ({res['sharpe_6040']:.2f})", border=True)
+          delta_description=f"vs {BENCH} ({res['sharpe_6040']:.2f})", border=True)
 k3.metric('Max drawdown (net)', pct(res['mdd_net']), f"{d_mdd:+.1f} pp",
-          delta_description=f"vs 60/40 ({pct(res['mdd_6040'])})", border=True,
-          help='Positive difference = the strategy lost less than the 60/40 at its worst point.')
+          delta_description=f"vs {BENCH} ({pct(res['mdd_6040'])})", border=True,
+          help=f'Positive difference = the strategy lost less than the static {BENCH} at its worst point.')
 k4.metric('Days in risk parity', pct(res['share_rp']), border=True,
-          help='Share of trading days in the risk parity regime. The static 60/40 never switches.')
+          help=f'Share of trading days in the risk parity regime. The static {BENCH} never switches.')
 
 # ---------------------------------------------------------------------------------------------
 # Tabs: one topic per tab instead of one very long page
@@ -207,17 +213,25 @@ with tab_overview:
     ax.plot(df['cum_net'], color=C_STRAT, linewidth=2, label='Strategy (net)')
     ax.plot(df['cum_gross'], '--', color=C_BLUE_DARK, linewidth=1.5,
             label='Strategy (gross of transaction costs)')
-    ax.plot(df['cum_6040'], color=C_BLUE_MID, linewidth=1.5, label='Static 60/40')
+    ax.plot(df['cum_6040'], color=C_BLUE_MID, linewidth=1.5, label=f'Static {BENCH}')
     style_axes(ax, 'Value of $1 invested')
     ax.legend(frameon=False, loc='upper left')
     show(fig)
     st.caption('All series start at 1 on the first day of the backtest. "Gross" excludes transaction costs '
                'but includes funding costs; "net" includes both.')
 
+    st.subheader('Drawdown from previous peak')
+    fig, ax = plt.subplots(figsize=(11, 4))
+    ax.plot(100 * df['drawdown_6040'], color=C_BLUE_MID, linewidth=1.5, label=f'Static {BENCH}')
+    ax.plot(100 * df['drawdown_net'], color=C_STRAT, linewidth=1.5, label='Strategy (net)')
+    style_axes(ax, 'Drawdown (%)')
+    ax.legend(frameon=False, loc='lower right')             # bottom right is clear of the 2008-09 trough
+    show(fig)
+
 # ---- Performance table -------------------------------------------------------------------
 with tab_perf:
-    st.subheader('Performance measures (benchmark: static 60/40)')
-    perf = s.performance_table(df)
+    st.subheader(f'Performance measures (benchmark: static {BENCH})')
+    perf = s.performance_table(df).rename(index={'Static 60/40': f'Static {BENCH}'})
     perf_display = pd.DataFrame(index=perf.index)           # formatted copy for display (strings)
     for col in ['Avg. annual return', 'Volatility', 'Alpha (annual)']:
         perf_display[col] = [pct(x, 2) for x in perf[col]]
@@ -226,8 +240,9 @@ with tab_perf:
     perf_display = perf_display[perf.columns]               # original column order
     st.dataframe(perf_display, width='stretch')
     st.caption('Daily simple returns, 252 days a year. Sharpe uses excess returns over the 1-month T-bill. '
-               'Beta is the regression slope on the 60/40 excess return (not annualised); alpha is annualised. '
-               'Information ratio = annualised mean of (strategy − 60/40) / annualised tracking error.')
+               f'Beta is the regression slope on the {BENCH} excess return (not annualised); alpha is annualised. '
+               f'Information ratio = annualised mean of (strategy − {BENCH}) / annualised tracking error. '
+               f'Benchmark name = % IEI / % SPY.')
 
 # ---- Drawdowns ---------------------------------------------------------------------------
 def drawdown_table(drawdown):
@@ -249,20 +264,13 @@ def drawdown_table(drawdown):
 
 
 with tab_dd:
-    st.subheader('Drawdown from previous peak')
-    fig, ax = plt.subplots(figsize=(11, 4))
-    ax.plot(100 * df['drawdown_6040'], color=C_BLUE_MID, linewidth=1.5, label='Static 60/40')
-    ax.plot(100 * df['drawdown_net'], color=C_STRAT, linewidth=1.5, label='Strategy (net)')
-    style_axes(ax, 'Drawdown (%)')
-    ax.legend(frameon=False, loc='lower left')
-    show(fig)
-
+    st.subheader('Worst drawdowns')
     c1, c2 = st.columns(2)
     with c1:
         st.markdown('**Strategy (net): 5 worst drawdowns**')
         st.dataframe(drawdown_table(df['drawdown_net']), width='stretch')
     with c2:
-        st.markdown('**Static 60/40: 5 worst drawdowns**')
+        st.markdown(f'**Static {BENCH}: 5 worst drawdowns**')
         st.dataframe(drawdown_table(df['drawdown_6040']), width='stretch')
     st.caption('An episode runs from the peak to full recovery of that peak (or to the end of the sample). '
                'Days = trading days from the peak to the recovery (or to the end of the sample).')
@@ -309,7 +317,7 @@ with tab_regime:
               frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.1), ncol=4)   # below the plot
     ax.set_ylim(0, max(params['max_lev'], gross_exposure.max()) * 1.05)
     show(fig)
-    st.caption(f"Weights decided at each day's close (they earn the next day's return). In the 60/40 regime "
+    st.caption(f"Weights decided at each day's close (they earn the next day's return). In the static regime "
                f"the weights are fixed at {100 * params['w_spy_static']:.0f}% SPY / "
                f"{100 * params['w_iei_static']:.0f}% IEI; in risk parity they follow volatility, and gross "
                f"exposure above 1 (the thin line) is borrowed at the T-bill + spread, up to "
