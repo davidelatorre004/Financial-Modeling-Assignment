@@ -458,24 +458,26 @@ with tab_regime:
     # Portfolio weights over time: shows when (and how much) leverage is used
     with st.container(border=True):                     # card around the chart
         st.subheader('Portfolio weights and gross exposure')
+        # Stacked areas: SPY at the bottom, IEI on top, so the top edge is the gross exposure
+        # (SPY + IEI). Everything above the dashed line at 1 is borrowed (leverage).
         gross_exposure = df['w_spy'] + df['w_iei']
         fig, ax = plt.subplots(figsize=(11, 4.5))
         shade_rp_periods(ax)
-        ax.axhline(1, color=C_BLUE_LIGHT, linewidth=0.8)        # 100% of capital: above this line = leverage
-        ax.plot(gross_exposure, color='midnightblue', linewidth=1.2, label='Gross exposure (SPY + IEI)')
-        ax.plot(df['w_iei'], color=C_BLUE_MID, linewidth=1.2, label='IEI weight (bonds)')
-        ax.plot(df['w_spy'], color=C_BLUE_DARK, linewidth=1.2, linestyle=':', label='SPY weight (equity)')
+        ax.stackplot(df.index, df['w_spy'], df['w_iei'], colors=[C_BLUE_DARK, C_BLUE_LIGHT],
+                     labels=['SPY weight (equity)', 'IEI weight (bonds)'], linewidth=0)
+        ax.axhline(1, color='midnightblue', linestyle='--', linewidth=1.2,
+                   label='Capital (1×): above = leverage')
         style_axes(ax, 'Weight (× capital)')
         handles, _ = ax.get_legend_handles_labels()
         ax.legend(handles=handles + [Patch(facecolor=C_BAND, edgecolor=C_BLUE_LIGHT, label='In risk parity')],
                   frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.1), ncol=4)   # below the plot
         ax.set_ylim(0, max(params['max_lev'], gross_exposure.max()) * 1.05)
         show(fig)
-        st.caption(f"Weights decided at each day's close (they earn the next day's return). In the static regime "
-                   f"the weights are fixed at {100 * params['w_spy_static']:.0f}% SPY / "
-                   f"{100 * params['w_iei_static']:.0f}% IEI; in risk parity they follow volatility, and gross "
-                   f"exposure above 1 (the thin line) is borrowed at the T-bill + spread, up to "
-                   f"{params['max_lev']:.1f}×.")
+        st.caption(f"Weights decided at each day's close (they earn the next day's return). The top edge of the "
+                   f"two areas is the gross exposure (SPY + IEI). In the static regime the weights are fixed at "
+                   f"{100 * params['w_spy_static']:.0f}% SPY / {100 * params['w_iei_static']:.0f}% IEI; in risk "
+                   f"parity they follow volatility, and exposure above the dashed line at 1 is borrowed at the "
+                   f"T-bill + spread, up to {params['max_lev']:.1f}×.")
 
 # ---- Implementation and threshold sensitivity --------------------------------------------
 with tab_impl:
