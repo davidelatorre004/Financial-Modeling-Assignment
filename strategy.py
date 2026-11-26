@@ -11,6 +11,7 @@ Pipeline:
     run_backtest()   -> returns, rolling vol/corr, weights, regime, net/gross returns
     performance_table(), drawdown_series(), drawdown_episodes(), regime_stats(),
     implementation_stats(), threshold_sensitivity() -> results shown in the app
+    monthly_returns(), monte_carlo() -> bootstrap Monte Carlo of the net strategy
 """
 
 import numpy as np
@@ -347,3 +348,56 @@ def threshold_sensitivity(data, thresholds=(-0.45, -0.35, -0.25, -0.15, -0.05), 
             'Days in risk parity': res['rp_on'].mean(),
         })
     return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------------------------
+# 10. Monte Carlo simulation of the strategy (bootstrap of monthly net returns)
+# ---------------------------------------------------------------------------------------------
+MC_SEED = 2270                   # fixed seed (course number): results are reproducible
+
+
+def monthly_returns(daily_returns):
+    """Monthly returns from daily returns, compounded within each calendar month.
+
+    monthly return = product of (1 + daily return) over the month - 1.
+    The first and the last month of the sample are dropped because they are incomplete
+    (the backtest starts and ends in the middle of a month).
+    Returns a Series indexed by month-end date.
+    """
+    monthly = (1 + daily_returns).resample('ME').prod() - 1    # compound the days of each month
+    return monthly.iloc[1:-1]                                  # drop the first and the last month
+
+
+def monte_carlo(monthly_returns, n_sim, n_months, seed=MC_SEED):
+    """Bootstrap Monte Carlo: n_sim paths of n_months monthly returns drawn WITH replacement
+    from the historical monthly returns. Each path starts at 1 (USD):
+        value_t = value_{t-1} * (1 + drawn return_t)
+
+    Returns a matrix of shape (n_sim, n_months + 1): column 0 is the starting value 1,
+    column t is the value of $1 after t months.
+
+    Vectorised version of this loop (it gives exactly the same numbers):
+        np.random.seed(seed)
+        for i in range(n_sim):
+            r = np.random.choice(ret_monthly, size=n_months)
+            paths[i, 1:] = np.cumprod(1 + r)
+    A private RandomState(seed) is the same generator as np.random.seed(seed) but does not change
+    the global random state, which on a web server is shared by all users.
+    """
+    pool = np.asarray(monthly_returns, dtype=float)
+    rng = np.random.RandomState(seed)
+    draws = rng.choice(pool, size=(n_sim, n_months))           # all draws at once, row by row
+    paths = np.ones((n_sim, n_months + 1))                     # column 0 = initial capital of 1
+    paths[:, 1:] = np.cumprod(1 + draws, axis=1)               # compound month by month
+    return paths
+
+
+def monte_carlo_summary(paths):
+    """Statistics of the final value of $1 across the simulated paths."""
+    final = paths[:, -1]
+    return {
+        'median': np.median(final),
+        'p5': np.percentile(final, 5),
+        'p95': np.percentile(final, 95),
+        'prob_loss': np.mean(final < 1),                       # share of paths ending below 1
+    }

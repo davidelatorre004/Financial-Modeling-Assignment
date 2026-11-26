@@ -19,7 +19,7 @@ implementation costs and threshold sensitivity.
 ## What the app shows
 
 The KPIs stay at the top; the rest is organised in tabs (Overview, Performance, Drawdowns,
-Regimes & weights, Implementation & sensitivity).
+Regimes & weights, Implementation & sensitivity, Monte Carlo).
 
 - KPIs (final value of $1, Sharpe, max drawdown, % of days in risk parity), strategy vs 60/40
 - Cumulative return (net, gross of transaction costs, 60/40)
@@ -29,6 +29,18 @@ Regimes & weights, Implementation & sensitivity).
 - Portfolio weights (SPY, IEI) and gross exposure over time, showing when leverage is used
 - Implementation: turnover, transaction and funding costs, gross exposure
 - Threshold sensitivity (−0.45 … −0.05), with the currently selected threshold highlighted
+- **Monte Carlo** of the strategy (net returns): bootstrap of its monthly returns (see below)
+
+## Monte Carlo tab
+
+The daily net returns of the strategy, from the backtest as configured in the sidebar, are compounded
+into calendar-month returns (the first and last, incomplete, months are dropped). Each scenario draws
+months at random, with replacement, from that pool and compounds them from $1 (seed 2270, so the
+results are reproducible). Inputs: horizon (12–240 months), number of simulations (1,000–10,000) and
+calibration scenario: *Full history*, *Prudent (2021 onwards)*, *Favourable (up to 2020)*.
+Outputs: median, 5th and 95th percentile of the final value, probability of loss, and a fan chart.
+Months are drawn independently, so multi-month crises are not reproduced; this is a historical
+simulation, not a forecast.
 
 ## Files
 
@@ -37,6 +49,7 @@ Regimes & weights, Implementation & sensitivity).
 | `strategy.py` | Pure functions: data download, signal, weights, backtest, metrics, drawdowns (no Streamlit code) |
 | `app.py` | Streamlit interface; imports from `strategy.py` |
 | `check_backtest.py` | Runs the backtest with the default parameters without Streamlit and prints the headline numbers |
+| `check_monte_carlo.py` | Runs the Monte Carlo with the defaults and checks the vectorised version against a loop |
 | `requirements.txt` | Python dependencies (pinned versions) |
 | `.streamlit/config.toml` | App theme (colours matching the charts, light mode) |
 
@@ -59,6 +72,7 @@ To check the numbers without the interface:
 
 ```bash
 python check_backtest.py
+python check_monte_carlo.py
 ```
 
 ## Data sources

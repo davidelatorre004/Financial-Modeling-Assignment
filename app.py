@@ -39,6 +39,7 @@ GITHUB_URL = 'https://github.com/davidelatorre004/Financial-Modeling-Assignment'
 # Small CSS touches (layout only; the matplotlib charts are not affected)
 #   - mini charts inside the KPI cards get some space from the card border, like the large charts
 #   - the tab bar becomes a row of light-blue "pills"; the selected tab is dark blue with white text
+#   - a small pulsing coral dot marks the Monte Carlo tab (6th tab of the main tab bar, key 'main_tabs')
 # ---------------------------------------------------------------------------------------------
 st.markdown("""
 <style>
@@ -73,6 +74,24 @@ st.markdown("""
 }
 [data-testid="stTab"][aria-selected="true"] p {
     color: #FFFFFF;                     /* white text on the selected tab */
+}
+/* Monte Carlo tab: pulsing coral dot after the label. ".st-key-main_tabs" is the class Streamlit
+   gives to st.tabs(..., key='main_tabs'), so no other tab bar is affected. */
+.st-key-main_tabs [data-testid="stTab"]:nth-of-type(6)::after {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-left: 8px;
+    border-radius: 50%;
+    background-color: coral;
+    vertical-align: middle;
+    animation: mc-pulse 1.6s ease-out infinite;
+}
+@keyframes mc-pulse {                   /* a coral ring that grows and fades, then repeats */
+    0%   { box-shadow: 0 0 0 0 rgba(255, 127, 80, 0.7); }
+    70%  { box-shadow: 0 0 0 7px rgba(255, 127, 80, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 127, 80, 0); }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -309,8 +328,10 @@ k4.metric('Days in risk parity', pct(res['share_rp']), border=True,
 # ---------------------------------------------------------------------------------------------
 # Tabs: one topic per tab instead of one very long page
 # ---------------------------------------------------------------------------------------------
-tab_overview, tab_perf, tab_dd, tab_regime, tab_impl = st.tabs(
-    ['Overview', 'Performance', 'Drawdowns', 'Regimes & weights', 'Implementation & sensitivity'])
+tab_overview, tab_perf, tab_dd, tab_regime, tab_impl, tab_mc = st.tabs(
+    ['Overview', 'Performance', 'Drawdowns', 'Regimes & weights', 'Implementation & sensitivity',
+     'Monte Carlo'],
+    key='main_tabs')                                       # key -> CSS class used for the pulsing dot
 
 # ---- Overview: cumulative return -----------------------------------------------------------
 with tab_overview:
@@ -488,6 +509,145 @@ with tab_impl:
     st.caption('Each row re-runs the backtest with a different correlation threshold; all other inputs are '
                'as set in the sidebar. The highlighted row is the threshold currently selected. The default '
                'threshold was chosen on the same data, so treat it with caution (data snooping).')
+
+
+# ---- Monte Carlo simulation of the strategy (net returns) ---------------------------------
+# Bootstrap of the strategy's monthly NET returns, from the backtest currently configured in the
+# sidebar. The calculation (monthly_returns, monte_carlo) is in strategy.py; here only UI and chart.
+
+# Calibration scenarios: which historical months go into the pool that is resampled
+MC_SCENARIOS = {
+    'Full history': (None, None),                          # all complete months
+    'Prudent (2021 onwards)': ('2021-01-01', None),        # stock-bond correlation turned positive
+    'Favourable (up to 2020)': (None, '2020-12-31'),       # mostly in the risk parity regime
+}
+
+
+@st.cache_data(show_spinner='Running the Monte Carlo simulation...')
+def run_monte_carlo(pool, n_sim, n_months):
+    """Simulate and keep only what the tab shows (cached on all inputs: pool, n_sim, n_months).
+
+    The full (n_sim x n_months+1) matrix is not stored: only the percentile bands per month,
+    50 sample paths and the statistics of the final value.
+    """
+    paths = s.monte_carlo(pool, n_sim, n_months)
+    return {
+        'summary': s.monte_carlo_summary(paths),
+        'bands': np.percentile(paths, [5, 25, 50, 75, 95], axis=0),   # one row per percentile
+        'sample_paths': paths[:50],                                    # 50 paths to draw
+    }
+
+
+with tab_mc:
+    st.subheader('Monte Carlo simulation of the strategy')
+    st.markdown('What could $1 invested in the strategy (net of all costs) become? Each scenario is built '
+                'by drawing historical **monthly** returns of the strategy at random, with replacement. '
+                'The returns come from the backtest as currently set in the sidebar.')
+
+    # Inputs (inside the tab, above the chart)
+    m1, m2 = st.columns(2)
+    m1.slider('Horizon (months)', 12, 240, value=120, step=12, key='mc_horizon')
+    m2.slider('Number of simulations', 1000, 10000, value=10000, step=1000, key='mc_n_sim')
+    st.radio('Calibration scenario', list(MC_SCENARIOS), horizontal=True, key='mc_scenario',
+             help='Which historical months are resampled. "Prudent" uses only months from January 2021, '
+                  'when the stock–bond correlation turned positive; "Favourable" only months up to '
+                  'December 2020.')
+    n_months, n_sim = st.session_state['mc_horizon'], st.session_state['mc_n_sim']
+    scenario = st.session_state['mc_scenario']
+
+    # Pool of historical monthly net returns for the chosen scenario
+    ret_monthly = s.monthly_returns(df['r_net'])            # complete months of the current backtest
+    first, last = MC_SCENARIOS[scenario]
+    pool = ret_monthly
+    if first is not None:
+        pool = pool[pool.index >= first]
+    if last is not None:
+        pool = pool[pool.index <= last]
+
+    if len(pool) > 0:
+        st.caption(f'The pool contains **{len(pool)} complete months** of net returns '
+                   f'({pool.index[0]:%b %Y} – {pool.index[-1]:%b %Y}).')
+    if len(pool) == 0:
+        st.error('The selected scenario contains no complete month in the current sample. '
+                 'Choose another scenario or change the sample dates in the sidebar.')
+    elif len(pool) < 24:
+        st.warning(f'Only {len(pool)} historical months in the pool (fewer than 24): the simulation '
+                   'resamples very few months, so its results are not reliable.')
+
+    # Everything the results depend on: if it changes after a run, the results are out of date
+    mc_inputs = (tuple(sorted(params.items())), str(start), str(end), scenario, n_sim, n_months)
+
+    if st.button('Run simulation', type='primary', icon=':material/casino:', disabled=len(pool) == 0):
+        st.session_state['mc_result'] = {                   # kept when switching tabs
+            'inputs': mc_inputs, 'scenario': scenario, 'n_sim': n_sim, 'n_months': n_months,
+            'pool_size': len(pool), **run_monte_carlo(pool, n_sim, n_months),
+        }
+        st.balloons()
+
+    if 'mc_result' not in st.session_state:
+        st.info('Choose the inputs and click **Run simulation**.', icon=':material/play_circle:')
+    else:
+        mc_res = st.session_state['mc_result']
+        if mc_res['inputs'] != mc_inputs:
+            st.caption(':orange[:material/update: The results below are out of date: the inputs changed '
+                       'since the last run. Click **Run simulation** to update them.]')
+        summ, H = mc_res['summary'], mc_res['n_months']
+
+        # KPI cards, same style as the cards at the top of the page
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric('Median final value', f"${summ['median']:.2f}", border=True,
+                  help=f'Value of $1 after {H} months: half of the simulated scenarios end above it, '
+                       'half below.')
+        c2.metric('5th percentile', f"${summ['p5']:.2f}", border=True,
+                  help='Bad case: only 5% of the scenarios end below this value.')
+        c3.metric('95th percentile', f"${summ['p95']:.2f}", border=True,
+                  help='Good case: only 5% of the scenarios end above this value.')
+        c4.metric('Probability of loss', pct(summ['prob_loss'], 2), border=True,
+                  help='Share of scenarios that end below the initial $1.')
+
+        # Fan chart (matplotlib, like the other charts)
+        with st.container(border=True):                     # card around the chart
+            months = np.arange(H + 1)
+            p5, p25, p50, p75, p95 = mc_res['bands']
+            fig, ax = plt.subplots(figsize=(11, 5))
+            for path in mc_res['sample_paths']:             # 50 individual scenarios
+                ax.plot(months, path, color=C_BLUE_LIGHT, linewidth=0.6)
+            ax.fill_between(months, p5, p95, color=C_STRAT, alpha=0.15, linewidth=0)
+            ax.fill_between(months, p25, p75, color=C_STRAT, alpha=0.3, linewidth=0)
+            ax.plot(months, p50, color=C_STRAT, linewidth=2.5)
+            ax.axhline(1, color='black', linestyle=':', linewidth=1.2)
+            ax.set_title(f"Monte Carlo simulation of the strategy: {mc_res['n_sim']:,} scenarios "
+                         f"over {H} months (50 shown)")
+            ax.set_xlabel('Month')
+            ax.set_ylabel('Value of $1 invested')
+            ax.set_xlim(0, H)
+            ax.grid(True, color='#e6e6e6', linewidth=0.8)   # same quiet grid and frame as style_axes()
+            ax.set_axisbelow(True)
+            for side in ('top', 'right'):
+                ax.spines[side].set_visible(False)
+            ax.legend(handles=[
+                plt.Line2D([], [], color=C_BLUE_LIGHT, linewidth=1, label='Simulated paths (50 shown)'),
+                Patch(facecolor=C_STRAT, alpha=0.15, label='5th–95th percentile'),
+                Patch(facecolor=C_STRAT, alpha=0.3, label='25th–75th percentile'),
+                plt.Line2D([], [], color=C_STRAT, linewidth=2.5, label='Median'),
+                plt.Line2D([], [], color='black', linestyle=':', linewidth=1.2, label='Initial capital'),
+            ], frameon=False, loc='upper left')
+            show(fig)
+            st.caption(f"**How to read this.** Each thin line is one possible path of $1 over {H} months, "
+                       f"built from {mc_res['pool_size']} historical months ({mc_res['scenario']}). "
+                       "The thick coral line is the median scenario; the darker band contains the middle "
+                       "50% of the scenarios and the lighter band 90%. Scenarios that finish below the "
+                       "dotted line lose money.")
+
+    # Limitations of the method
+    st.info(
+        '**Limitations**\n'
+        '- Months are drawn independently, so multi-month crises and correlation regimes are not reproduced.\n'
+        '- Outcomes can never be worse than the worst historical month.\n'
+        '- The full-history pool is dominated by 2007–2020, when the risk parity regime was active, so '
+        'results may be optimistic: compare with the Prudent scenario.\n'
+        '- This is a historical simulation, not a forecast, and not investment advice.',
+        icon=':material/warning:')
 
 # ---------------------------------------------------------------------------------------------
 # 9. Footer
