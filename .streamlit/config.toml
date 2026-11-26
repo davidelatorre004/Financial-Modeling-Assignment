@@ -1,0 +1,9 @@
+# Streamlit theme: matches the chart palette (blue shades; coral is reserved for the net strategy).
+# base = "light" keeps the app light even when the viewer's system uses dark mode,
+# so the white matplotlib charts never sit on a dark page.
+[theme]
+base = "light"
+primaryColor = "#4682B4"              # steelblue: sliders, buttons, selected tab
+backgroundColor = "#FFFFFF"           # page background
+secondaryBackgroundColor = "#F0F8FF"  # aliceblue: sidebar, table headers, widgets
+textColor = "#1F2A37"                 # dark slate text

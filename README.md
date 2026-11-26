@@ -18,13 +18,17 @@ implementation costs and threshold sensitivity.
 
 ## What the app shows
 
+The KPIs stay at the top; the rest is organised in tabs (Overview, Performance, Drawdowns,
+Regimes & weights, Implementation & sensitivity).
+
 - KPIs (final value of $1, Sharpe, max drawdown, % of days in risk parity), strategy vs 60/40
 - Cumulative return (net, gross of transaction costs, 60/40)
 - Performance table: average return, volatility, Sharpe, alpha, beta, information ratio
 - Drawdown chart and the 5 worst drawdowns of each portfolio
 - Rolling correlation with the threshold and the risk parity periods shaded, plus regime statistics
+- Portfolio weights (SPY, IEI) and gross exposure over time, showing when leverage is used
 - Implementation: turnover, transaction and funding costs, gross exposure
-- Threshold sensitivity (−0.45 … −0.05)
+- Threshold sensitivity (−0.45 … −0.05), with the currently selected threshold highlighted
 
 ## Files
 
@@ -34,6 +38,7 @@ implementation costs and threshold sensitivity.
 | `app.py` | Streamlit interface; imports from `strategy.py` |
 | `check_backtest.py` | Runs the backtest with the default parameters without Streamlit and prints the headline numbers |
 | `requirements.txt` | Python dependencies (pinned versions) |
+| `.streamlit/config.toml` | App theme (colours matching the charts, light mode) |
 
 The calculations reproduce the course notebook `FM_switch_6040_risk_parity.ipynb` exactly: with the
 default parameters, every column of the backtest is identical to the notebook's.
