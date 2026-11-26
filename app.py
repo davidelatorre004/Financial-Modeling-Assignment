@@ -592,7 +592,6 @@ with tab_mc:
             'inputs': mc_inputs, 'scenario': scenario, 'n_sim': n_sim, 'n_months': n_months,
             'pool_size': len(pool), **run_monte_carlo(pool, n_sim, n_months),
         }
-        st.balloons()
 
     if 'mc_result' not in st.session_state:
         st.info('Choose the inputs and click **Run simulation**.', icon=':material/play_circle:')
