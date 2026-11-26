@@ -10,6 +10,8 @@ Run locally with:  streamlit run app.py
 """
 
 import datetime as dt
+import importlib
+import os
 
 import matplotlib
 matplotlib.use('Agg')                                   # non-interactive backend (needed on servers)
@@ -21,6 +23,14 @@ import pandas as pd
 import streamlit as st
 
 import strategy as s
+
+# After a redeploy, Streamlit Community Cloud reruns app.py with the new code but can keep the OLD
+# strategy.py in memory (modules are imported once per server process). Reload strategy.py whenever
+# the file on disk has changed, so app.py and strategy.py are always the same version.
+_strategy_mtime = os.path.getmtime(s.__file__)
+if getattr(s, '_loaded_mtime', None) != _strategy_mtime:
+    s = importlib.reload(s)
+    s._loaded_mtime = _strategy_mtime
 
 # ---------------------------------------------------------------------------------------------
 # Page setup and colours (net strategy = coral, everything else = shades of blue)
