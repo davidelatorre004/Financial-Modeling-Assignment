@@ -36,6 +36,48 @@ C_BAND = 'aliceblue'              # shaded bands
 GITHUB_URL = 'https://github.com/davidelatorre004/Financial-Modeling-Assignment'
 
 # ---------------------------------------------------------------------------------------------
+# Small CSS touches (layout only; the matplotlib charts are not affected)
+#   - mini charts inside the KPI cards get some space from the card border, like the large charts
+#   - the tab bar becomes a row of light-blue "pills"; the selected tab is dark blue with white text
+# ---------------------------------------------------------------------------------------------
+st.markdown("""
+<style>
+/* KPI cards: leave a margin around the mini chart */
+[data-testid="stMetricChart"] {
+    margin: 4px 16px 16px 16px;
+    width: calc(100% - 32px) !important;
+}
+[data-testid="stMetricChart"] svg {     /* scale the chart to the narrower box instead of overflowing */
+    width: 100% !important;
+    height: auto !important;
+}
+/* Tab bar: pills instead of an underline */
+[data-testid="stTabs"] [role="tablist"] {
+    gap: 8px;
+}
+[data-testid="stTabs"] [role="tablist"]::after,                 /* grey line under the tab bar */
+[data-testid="stTabs"] .react-aria-SelectionIndicator {         /* underline of the selected tab */
+    display: none;
+}
+[data-testid="stTab"] {
+    background-color: #E3EEF9;          /* light blue */
+    border-radius: 8px;
+    padding: 6px 16px;
+    transition: background-color 0.15s;
+}
+[data-testid="stTab"]:hover {
+    background-color: #CFE2F3;          /* a little darker on hover */
+}
+[data-testid="stTab"][aria-selected="true"] {
+    background-color: #1F4E79;          /* dark blue */
+}
+[data-testid="stTab"][aria-selected="true"] p {
+    color: #FFFFFF;                     /* white text on the selected tab */
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ---------------------------------------------------------------------------------------------
 # Sidebar: inputs (defaults = notebook values). Each widget has a key so "Reset" can restore it.
 # Values shown in % or bp in the sidebar are converted to decimals before calling strategy.py.
 # Display defaults are typed literally (7.0, not 0.07 * 100) so that dividing by 100 gives exactly
