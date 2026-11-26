@@ -64,25 +64,61 @@ def reset_defaults():
 for key, value in WIDGET_DEFAULTS.items():                 # initialise the widgets on the first run
     st.session_state.setdefault(key, value)
 
+# Labels of the parameters, used to list the ones changed from their default value
+PARAM_LABELS = {
+    'threshold': 'Correlation threshold', 'corr_window': 'Correlation window',
+    'vol_window': 'Volatility window', 'target_vol_pct': 'Target volatility',
+    'max_lev': 'Maximum leverage', 'tc_bp': 'Transaction cost', 'spread_pct': 'Funding spread',
+    'equity_pct': 'Equity share', 'start': 'Start date', 'end': 'End date',
+}
+
+
+def is_changed(key):
+    """True if the widget value differs from its default (floats compared with a tolerance)."""
+    value, default = st.session_state[key], WIDGET_DEFAULTS[key]
+    if isinstance(default, (int, float)):
+        return not np.isclose(value, default)
+    return value != default
+
+
+def section(title, icon, keys):
+    """Collapsible sidebar section; its title shows how many of its parameters were changed."""
+    n = sum(is_changed(k) for k in keys)
+    label = f'{title}  ·  {n} changed' if n else title
+    return st.expander(label, expanded=True, icon=icon)
+
+
 with st.sidebar:
     st.header('Strategy parameters')
-    st.slider('Correlation threshold', -0.6, 0.6, step=0.05, key='threshold',
-              help='Switch to risk parity when the rolling SPY-IEI correlation is at or below this value.')
-    st.slider('Correlation window (days)', 60, 250, step=1, key='corr_window')
-    st.slider('Volatility window (days)', 10, 60, step=1, key='vol_window')
-    st.slider('Target volatility per asset (%)', 3.0, 100.0, step=0.5, key='target_vol_pct',
-              help='Ex-ante volatility cap for each asset in risk parity. High values push the weights '
-                   'up until the maximum gross leverage binds.')
-    st.slider('Maximum gross leverage (x)', 1.0, 10.0, step=0.1, key='max_lev')
-    st.slider('Transaction cost (bp per unit traded)', 0.0, 30.0, step=0.5, key='tc_bp')
-    st.slider('Funding spread over T-bill (%)', 0.0, 2.0, step=0.1, key='spread_pct')
-    st.slider('Static portfolio: equity share (%)', 0.0, 100.0, step=5.0, key='equity_pct',
-              help='SPY weight of the static benchmark; bonds (IEI) get the rest.')
-    st.caption(f"Static weights: {st.session_state['equity_pct']:.0f}% SPY / "
-               f"{100 - st.session_state['equity_pct']:.0f}% IEI")
-    st.date_input('Start date', min_value=dt.date(2007, 1, 1), max_value=dt.date.today(), key='start')
-    st.date_input('End date', min_value=dt.date(2007, 1, 1), max_value=dt.date.today(), key='end')
-    st.button('Reset to defaults', on_click=reset_defaults, width='stretch')
+    changed = [PARAM_LABELS[k] for k in WIDGET_DEFAULTS if is_changed(k)]
+    if changed:                                            # summary of what is being tested
+        st.markdown(' '.join(f':orange-badge[{name}]' for name in changed))
+        st.caption('Changed from the notebook defaults.')
+    else:
+        st.markdown(':green-badge[:material/check: Notebook defaults]')
+
+    with section('Signal', ':material/sensors:', ['threshold', 'corr_window']):
+        st.slider('Correlation threshold', -0.6, 0.6, step=0.05, key='threshold',
+                  help='Switch to risk parity when the rolling SPY-IEI correlation is at or below this value.')
+        st.slider('Correlation window (days)', 60, 250, step=1, key='corr_window')
+    with section('Risk parity', ':material/balance:', ['vol_window', 'target_vol_pct', 'max_lev']):
+        st.slider('Volatility window (days)', 10, 60, step=1, key='vol_window')
+        st.slider('Target volatility per asset (%)', 3.0, 100.0, step=0.5, key='target_vol_pct',
+                  help='Ex-ante volatility cap for each asset in risk parity. High values push the weights '
+                       'up until the maximum gross leverage binds.')
+        st.slider('Maximum gross leverage (x)', 1.0, 10.0, step=0.1, key='max_lev')
+    with section('Costs', ':material/payments:', ['tc_bp', 'spread_pct']):
+        st.slider('Transaction cost (bp per unit traded)', 0.0, 30.0, step=0.5, key='tc_bp')
+        st.slider('Funding spread over T-bill (%)', 0.0, 2.0, step=0.1, key='spread_pct')
+    with section('Benchmark', ':material/pie_chart:', ['equity_pct']):
+        st.slider('Static portfolio: equity share (%)', 0.0, 100.0, step=5.0, key='equity_pct',
+                  help='SPY weight of the static benchmark; bonds (IEI) get the rest.')
+        st.caption(f"Static weights: {st.session_state['equity_pct']:.0f}% SPY / "
+                   f"{100 - st.session_state['equity_pct']:.0f}% IEI")
+    with section('Sample', ':material/date_range:', ['start', 'end']):
+        st.date_input('Start date', min_value=dt.date(2007, 1, 1), max_value=dt.date.today(), key='start')
+        st.date_input('End date', min_value=dt.date(2007, 1, 1), max_value=dt.date.today(), key='end')
+    st.button('Reset to defaults', on_click=reset_defaults, width='stretch', icon=':material/restart_alt:')
 
 # Parameters in the units used by strategy.py (decimals)
 w_spy_static = st.session_state['equity_pct'] / 100
@@ -113,14 +149,9 @@ def load_data(start, end):
     return s.download_data(start, end)
 
 
-st.title('Correlation-Switch Risk Parity: SPY & IEI')
-st.markdown(
-    f"By default the portfolio is a **static {BENCH}** ({100 - EQ_PCT:.0f}% IEI Treasuries 3–7y, "
-    f"{EQ_PCT:.0f}% SPY S&P 500), rebalanced daily.  \n"
-    "When the rolling stock–bond correlation falls to the **threshold or below**, bonds are a reliable hedge and it "
-    "switches to **risk parity**: each asset is sized to a target volatility, with leverage up to a cap.  \n"
-    "Leverage is funded at the 1-month T-bill plus a spread, and every trade pays a transaction cost."
-)
+st.title('Correlation-Switch Risk Parity')
+st.markdown(f'A static **{BENCH}** portfolio of SPY and IEI that switches to levered **risk parity** '
+            f'when stocks and bonds hedge each other.')
 
 start, end = st.session_state['start'], st.session_state['end']
 if start >= end:
@@ -142,9 +173,24 @@ res = s.summary(df)
 reg = s.regime_stats(df)
 imp = s.implementation_stats(df)
 
-st.caption(f"Backtest sample: **{df.index[0]:%d %b %Y} – {df.index[-1]:%d %b %Y}** "
-           f"({len(df):,} trading days; the first {params['corr_window']} days of data are used to "
-           f"estimate the first correlation).")
+# Badges: assets, sample actually used, course
+st.markdown(
+    ':blue-badge[:material/show_chart: SPY · IEI] '
+    f":blue-badge[:material/calendar_month: {df.index[0]:%d %b %Y} – {df.index[-1]:%d %b %Y}] "
+    f':blue-badge[{len(df):,} trading days] '
+    ':gray-badge[:material/school: Nova SBE · 2270 Financial Modeling]'
+)
+with st.expander('How the strategy works', icon=':material/info:'):
+    st.markdown(
+        f"By default the portfolio is a **static {BENCH}** ({100 - EQ_PCT:.0f}% IEI Treasuries 3–7y, "
+        f"{EQ_PCT:.0f}% SPY S&P 500), rebalanced daily.  \n"
+        "When the rolling stock–bond correlation falls to the **threshold or below**, bonds are a reliable hedge "
+        "and it switches to **risk parity**: each asset is sized to a target volatility, with leverage up to a "
+        "cap.  \n"
+        "Leverage is funded at the 1-month T-bill plus a spread, and every trade pays a transaction cost."
+    )
+    st.caption(f"The backtest starts on {df.index[0]:%d %b %Y} because the first {params['corr_window']} "
+               f"days of data are used to estimate the first correlation.")
 
 
 # ---------------------------------------------------------------------------------------------
@@ -190,17 +236,33 @@ d_final = res['final_net'] - res['final_6040']
 d_sharpe = res['sharpe_net'] - res['sharpe_6040']
 d_mdd = 100 * (res['mdd_net'] - res['mdd_6040'])           # in percentage points; > 0 = shallower drawdown
 
+# Small series drawn inside the cards (display only, monthly or yearly so they stay light)
+spark_value = df['cum_net'].resample('ME').last().round(3).tolist()          # value of $1, month end
+ex_net = df['r_net'] - df['rf']
+rolling_sharpe = (np.sqrt(252) * ex_net.rolling(252).mean() / ex_net.rolling(252).std()).dropna()
+spark_sharpe = rolling_sharpe.resample('ME').last().dropna().round(2).tolist()   # 1-year rolling Sharpe
+spark_dd = (100 * df['drawdown_net']).resample('ME').min().round(2).tolist()     # worst drawdown each month
+spark_rp = (100 * df['rp_on'].resample('YE').mean()).round(1).tolist()           # % of days in RP, by year
+
 k1, k2, k3, k4 = st.columns(4)
 k1.metric('Final value of $1 (net)', f"${res['final_net']:.2f}",
           f"{'+' if d_final >= 0 else '-'}${abs(d_final):.2f}",
-          delta_description=f"vs {BENCH} (${res['final_6040']:.2f})", border=True)
+          delta_description=f"vs {BENCH} (${res['final_6040']:.2f})", border=True,
+          chart_data=spark_value, chart_type='area', height='stretch',
+          help='Mini chart: value of $1 in the strategy (net), month by month.')
 k2.metric('Sharpe ratio (net)', f"{res['sharpe_net']:.2f}", f"{d_sharpe:+.2f}",
-          delta_description=f"vs {BENCH} ({res['sharpe_6040']:.2f})", border=True)
+          delta_description=f"vs {BENCH} ({res['sharpe_6040']:.2f})", border=True,
+          chart_data=spark_sharpe if spark_sharpe else None, chart_type='line', height='stretch',
+          help='Mini chart: 1-year rolling Sharpe ratio of the strategy (net).')
 k3.metric('Max drawdown (net)', pct(res['mdd_net']), f"{d_mdd:+.1f} pp",
           delta_description=f"vs {BENCH} ({pct(res['mdd_6040'])})", border=True,
-          help=f'Positive difference = the strategy lost less than the static {BENCH} at its worst point.')
+          chart_data=spark_dd, chart_type='area', height='stretch',
+          help=f'Positive difference = the strategy lost less than the static {BENCH} at its worst point. '
+               'Mini chart: drawdown of the strategy (net), month by month.')
 k4.metric('Days in risk parity', pct(res['share_rp']), border=True,
-          help=f'Share of trading days in the risk parity regime. The static {BENCH} never switches.')
+          chart_data=spark_rp, chart_type='bar', height='stretch',
+          help=f'Share of trading days in the risk parity regime. The static {BENCH} never switches. '
+               'Mini chart: share of days in risk parity, year by year.')
 
 # ---------------------------------------------------------------------------------------------
 # Tabs: one topic per tab instead of one very long page
@@ -210,25 +272,27 @@ tab_overview, tab_perf, tab_dd, tab_regime, tab_impl = st.tabs(
 
 # ---- Overview: cumulative return -----------------------------------------------------------
 with tab_overview:
-    st.subheader('Cumulative return (base = 1)')
-    fig, ax = plt.subplots(figsize=(11, 4.8))
-    ax.plot(df['cum_net'], color=C_STRAT, linewidth=2, label='Strategy (net)')
-    ax.plot(df['cum_gross'], '--', color=C_BLUE_DARK, linewidth=1.5,
-            label='Strategy (gross of transaction costs)')
-    ax.plot(df['cum_6040'], color=C_BLUE_MID, linewidth=1.5, label=f'Static {BENCH}')
-    style_axes(ax, 'Value of $1 invested')
-    ax.legend(frameon=False, loc='upper left')
-    show(fig)
-    st.caption('All series start at 1 on the first day of the backtest. "Gross" excludes transaction costs '
-               'but includes funding costs; "net" includes both.')
+    with st.container(border=True):                     # card around the chart
+        st.subheader('Cumulative return (base = 1)')
+        fig, ax = plt.subplots(figsize=(11, 4.8))
+        ax.plot(df['cum_net'], color=C_STRAT, linewidth=2, label='Strategy (net)')
+        ax.plot(df['cum_gross'], '--', color=C_BLUE_DARK, linewidth=1.5,
+                label='Strategy (gross of transaction costs)')
+        ax.plot(df['cum_6040'], color=C_BLUE_MID, linewidth=1.5, label=f'Static {BENCH}')
+        style_axes(ax, 'Value of $1 invested')
+        ax.legend(frameon=False, loc='upper left')
+        show(fig)
+        st.caption('All series start at 1 on the first day of the backtest. "Gross" excludes transaction costs '
+                   'but includes funding costs; "net" includes both.')
 
-    st.subheader('Drawdown from previous peak')
-    fig, ax = plt.subplots(figsize=(11, 4))
-    ax.plot(100 * df['drawdown_6040'], color=C_BLUE_MID, linewidth=1.5, label=f'Static {BENCH}')
-    ax.plot(100 * df['drawdown_net'], color=C_STRAT, linewidth=1.5, label='Strategy (net)')
-    style_axes(ax, 'Drawdown (%)')
-    ax.legend(frameon=False, loc='lower right')             # bottom right is clear of the 2008-09 trough
-    show(fig)
+    with st.container(border=True):                     # card around the chart
+        st.subheader('Drawdown from previous peak')
+        fig, ax = plt.subplots(figsize=(11, 4))
+        ax.plot(100 * df['drawdown_6040'], color=C_BLUE_MID, linewidth=1.5, label=f'Static {BENCH}')
+        ax.plot(100 * df['drawdown_net'], color=C_STRAT, linewidth=1.5, label='Strategy (net)')
+        style_axes(ax, 'Drawdown (%)')
+        ax.legend(frameon=False, loc='lower right')             # bottom right is clear of the 2008-09 trough
+        show(fig)
 
 # ---- Performance table -------------------------------------------------------------------
 with tab_perf:
@@ -248,11 +312,14 @@ with tab_perf:
 
 # ---- Drawdowns ---------------------------------------------------------------------------
 def drawdown_table(drawdown):
-    """The 5 worst episodes, formatted for display, with the worst one highlighted."""
+    """The 5 worst episodes, formatted for display, with the worst one highlighted.
+
+    Depth is drawn as a bar (longer bar = deeper loss) by the column configuration in show_drawdowns().
+    """
     top = s.worst_drawdowns(drawdown, 5)
     table = pd.DataFrame({
         # plain lists (not Series), so pandas does not try to align them with the new index
-        'Depth': [pct(x, 2) for x in top['depth']],
+        'Depth': [-100 * x for x in top['depth']],          # size of the loss in %, shown as a bar
         'Peak': [d.strftime('%d %b %Y') for d in top['peak_date']],
         'Trough': [d.strftime('%d %b %Y') for d in top['trough_date']],
         'Recovery': [d.strftime('%d %b %Y') if rec else 'not recovered'
@@ -265,34 +332,45 @@ def drawdown_table(drawdown):
     return table.style.apply(highlight, axis=1)
 
 
+# Same bar scale for both tables, so the two portfolios can be compared at a glance
+DD_SCALE = -100 * min(res['mdd_net'], res['mdd_6040'])
+
+
+def show_drawdowns(drawdown):
+    """Draw a drawdown table with the depth as a red bar labelled '-x.xx%'."""
+    st.dataframe(drawdown_table(drawdown), width='stretch', column_config={
+        'Depth': st.column_config.ProgressColumn('Depth', format='-%.2f%%', min_value=0.0,
+                                                 max_value=DD_SCALE, color='red', width='large'),
+    })
+
+
 with tab_dd:
     st.subheader('Worst drawdowns')
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown('**Strategy (net): 5 worst drawdowns**')
-        st.dataframe(drawdown_table(df['drawdown_net']), width='stretch')
-    with c2:
-        st.markdown(f'**Static {BENCH}: 5 worst drawdowns**')
-        st.dataframe(drawdown_table(df['drawdown_6040']), width='stretch')
+    # One table above the other (full width), so the depth bars and all the dates fit
+    st.markdown('**Strategy (net): 5 worst drawdowns**')
+    show_drawdowns(df['drawdown_net'])
+    st.markdown(f'**Static {BENCH}: 5 worst drawdowns**')
+    show_drawdowns(df['drawdown_6040'])
     st.caption('An episode runs from the peak to full recovery of that peak (or to the end of the sample). '
                'Days = trading days from the peak to the recovery (or to the end of the sample).')
 
 # ---- Regimes: correlation signal and portfolio weights -------------------------------------
 with tab_regime:
-    st.subheader(f"Rolling {params['corr_window']}-day SPY–IEI correlation and risk parity periods")
-    fig, ax = plt.subplots(figsize=(11, 4.5))
-    shade_rp_periods(ax)
-    ax.plot(df['corr'], color=C_BLUE_DARK, linewidth=1.5)
-    ax.axhline(params['threshold'], linestyle='--', color=C_BLUE_MID, linewidth=1.5)
-    ax.axhline(0, color=C_BLUE_LIGHT, linewidth=0.8)
-    style_axes(ax, 'Correlation')
-    ax.legend(handles=[plt.Line2D([], [], color=C_BLUE_DARK, linewidth=1.5,
-                                  label=f"Correlation ({params['corr_window']} days)"),
-                       plt.Line2D([], [], color=C_BLUE_MID, linestyle='--', linewidth=1.5,
-                                  label=f"Switch threshold ({params['threshold']:.2f})"),
-                       Patch(facecolor=C_BAND, edgecolor=C_BLUE_LIGHT, label='In risk parity')],
-              frameon=False, loc='upper left')
-    show(fig)
+    with st.container(border=True):                     # card around the chart
+        st.subheader(f"Rolling {params['corr_window']}-day SPY–IEI correlation and risk parity periods")
+        fig, ax = plt.subplots(figsize=(11, 4.5))
+        shade_rp_periods(ax)
+        ax.plot(df['corr'], color=C_BLUE_DARK, linewidth=1.5)
+        ax.axhline(params['threshold'], linestyle='--', color=C_BLUE_MID, linewidth=1.5)
+        ax.axhline(0, color=C_BLUE_LIGHT, linewidth=0.8)
+        style_axes(ax, 'Correlation')
+        ax.legend(handles=[plt.Line2D([], [], color=C_BLUE_DARK, linewidth=1.5,
+                                      label=f"Correlation ({params['corr_window']} days)"),
+                           plt.Line2D([], [], color=C_BLUE_MID, linestyle='--', linewidth=1.5,
+                                      label=f"Switch threshold ({params['threshold']:.2f})"),
+                           Patch(facecolor=C_BAND, edgecolor=C_BLUE_LIGHT, label='In risk parity')],
+                  frameon=False, loc='upper left')
+        show(fig)
 
     # Regime statistics (no deltas: there is nothing to compare them with)
     r1, r2, r3, r4 = st.columns(4)
@@ -305,25 +383,26 @@ with tab_regime:
                     else 'The strategy never entered risk parity.'))
 
     # Portfolio weights over time: shows when (and how much) leverage is used
-    st.subheader('Portfolio weights and gross exposure')
-    gross_exposure = df['w_spy'] + df['w_iei']
-    fig, ax = plt.subplots(figsize=(11, 4.5))
-    shade_rp_periods(ax)
-    ax.axhline(1, color=C_BLUE_LIGHT, linewidth=0.8)        # 100% of capital: above this line = leverage
-    ax.plot(gross_exposure, color='midnightblue', linewidth=1.2, label='Gross exposure (SPY + IEI)')
-    ax.plot(df['w_iei'], color=C_BLUE_MID, linewidth=1.2, label='IEI weight (bonds)')
-    ax.plot(df['w_spy'], color=C_BLUE_DARK, linewidth=1.2, linestyle=':', label='SPY weight (equity)')
-    style_axes(ax, 'Weight (× capital)')
-    handles, _ = ax.get_legend_handles_labels()
-    ax.legend(handles=handles + [Patch(facecolor=C_BAND, edgecolor=C_BLUE_LIGHT, label='In risk parity')],
-              frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.1), ncol=4)   # below the plot
-    ax.set_ylim(0, max(params['max_lev'], gross_exposure.max()) * 1.05)
-    show(fig)
-    st.caption(f"Weights decided at each day's close (they earn the next day's return). In the static regime "
-               f"the weights are fixed at {100 * params['w_spy_static']:.0f}% SPY / "
-               f"{100 * params['w_iei_static']:.0f}% IEI; in risk parity they follow volatility, and gross "
-               f"exposure above 1 (the thin line) is borrowed at the T-bill + spread, up to "
-               f"{params['max_lev']:.1f}×.")
+    with st.container(border=True):                     # card around the chart
+        st.subheader('Portfolio weights and gross exposure')
+        gross_exposure = df['w_spy'] + df['w_iei']
+        fig, ax = plt.subplots(figsize=(11, 4.5))
+        shade_rp_periods(ax)
+        ax.axhline(1, color=C_BLUE_LIGHT, linewidth=0.8)        # 100% of capital: above this line = leverage
+        ax.plot(gross_exposure, color='midnightblue', linewidth=1.2, label='Gross exposure (SPY + IEI)')
+        ax.plot(df['w_iei'], color=C_BLUE_MID, linewidth=1.2, label='IEI weight (bonds)')
+        ax.plot(df['w_spy'], color=C_BLUE_DARK, linewidth=1.2, linestyle=':', label='SPY weight (equity)')
+        style_axes(ax, 'Weight (× capital)')
+        handles, _ = ax.get_legend_handles_labels()
+        ax.legend(handles=handles + [Patch(facecolor=C_BAND, edgecolor=C_BLUE_LIGHT, label='In risk parity')],
+                  frameon=False, loc='upper center', bbox_to_anchor=(0.5, -0.1), ncol=4)   # below the plot
+        ax.set_ylim(0, max(params['max_lev'], gross_exposure.max()) * 1.05)
+        show(fig)
+        st.caption(f"Weights decided at each day's close (they earn the next day's return). In the static regime "
+                   f"the weights are fixed at {100 * params['w_spy_static']:.0f}% SPY / "
+                   f"{100 * params['w_iei_static']:.0f}% IEI; in risk parity they follow volatility, and gross "
+                   f"exposure above 1 (the thin line) is borrowed at the T-bill + spread, up to "
+                   f"{params['max_lev']:.1f}×.")
 
 # ---- Implementation and threshold sensitivity --------------------------------------------
 with tab_impl:
@@ -351,12 +430,19 @@ with tab_impl:
         current = np.isclose(row.name, params['threshold'])
         return ['background-color: aliceblue; font-weight: bold' if current else ''] * len(row)
 
+    sharpe_lo = min(0.0, sens['Sharpe (net)'].min())       # bars start at 0 unless a Sharpe is negative
     st.dataframe(
         sens.style.apply(highlight_current, axis=1)
-            .format({'Sharpe (net)': '{:.2f}', 'Avg. annual return (net)': '{:.2%}',
-                     'Max drawdown (net)': '{:.2%}', 'Days in risk parity': '{:.1%}'})
+            .format({'Avg. annual return (net)': '{:.2%}', 'Max drawdown (net)': '{:.2%}'})
             .format_index('{:.2f}'),
-        width='stretch')
+        width='stretch',
+        column_config={                                    # Sharpe and time in risk parity as bars
+            'Sharpe (net)': st.column_config.ProgressColumn(
+                'Sharpe (net)', format='%.2f', min_value=sharpe_lo,
+                max_value=max(sens['Sharpe (net)'].max(), sharpe_lo + 0.01)),
+            'Days in risk parity': st.column_config.ProgressColumn(
+                'Days in risk parity', format='percent', min_value=0.0, max_value=1.0),
+        })
     st.caption('Each row re-runs the backtest with a different correlation threshold; all other inputs are '
                'as set in the sidebar. The highlighted row is the threshold currently selected. The default '
                'threshold was chosen on the same data, so treat it with caution (data snooping).')
